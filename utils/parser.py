@@ -1,0 +1,77 @@
+import re
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+def extract_json(text: str) -> dict | None:
+    try:
+        # Avoid printing raw data here to keep output clean
+        # print(f"This is the data:\n{text}")
+        if text.strip().startswith('{'):
+            return json.loads(text.strip(), strict=False)
+    except json.JSONDecodeError as e:
+        # Ignore and fallback to regex extraction instead of logging an error
+        pass
+
+    markdown_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if markdown_match:
+        try:
+            return json.loads(markdown_match.group(1), strict=False)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decoding from markdown failed: {e}")
+            pass
+
+    brace_match = re.search(r"(\{.*?\})", text, re.DOTALL)
+    
+    # A more robust capture for nested JSON blocks without using complex regex
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        try:
+            return json.loads(text[start_idx:end_idx+1], strict=False)
+        except json.JSONDecodeError as e:
+            pass
+
+    if brace_match:
+        try:
+            return json.loads(brace_match.group(1), strict=False)
+        except json.JSONDecodeError as e:
+            tool_match = re.search(r'"tool"\s*:\s*"([^"]+)"', text)
+            filename_match = re.search(r'"filename"\s*:\s*"([^"]+)"', text)
+
+            content_match = re.search(r'"content"\s*:\s*"(.*)"[\s}]*$', text, re.DOTALL)
+
+            if tool_match and filename_match and content_match:
+                content = content_match.group(1)
+
+                content = content.replace('\\n', '\n').replace('\\"', '"')
+ 
+                return {
+                    "tool": tool_match.group(1),
+                    "args": {
+                        "filename": filename_match.group(1),
+                        "content": content
+                    }
+                }
+                
+            # Additional fallback for tool like search_web using regex
+            if tool_match and '"query"' in text:
+                query_match = re.search(r'"query"\s*:\s*"([^"]+)"', text)
+                if query_match:
+                    num_results_match = re.search(r'"num_results"\s*:\s*(\d+)', text)
+                    args = {"query": query_match.group(1)}
+                    if num_results_match:
+                        args["num_results"] = int(num_results_match.group(1))
+                    return {
+                        "tool": tool_match.group(1),
+                        "args": args
+                    }
+
+    return None
+
+def extract_code_block(text: str) -> str | None:
+    pattern = r"```[^\n]*\n(.*?)```"
+    match = re.search(pattern, text, re.DOTALL)
+    return match.group(1).strip() if match else None
