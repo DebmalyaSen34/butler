@@ -2,7 +2,7 @@ import requests
 import logging
 from collections.abc import Callable
 from typing import Any
-from config.settings import LLAMA_CPP_URL, PROMPT_TEMPLATE
+from config.settings import PROMPT_TEMPLATE, OLLAMA_MODEL, OLLAMA_URL
 from tools.registry import TOOL_PROMPT, execute_tool
 from rich.console import Console
 
@@ -41,14 +41,18 @@ def generate_response(
     formatted_prompt = PROMPT_TEMPLATE.format(prompt=combined_prompt)
 
     payload = {
+        "model": OLLAMA_MODEL,
         "prompt": formatted_prompt,
-        "temperature": 0.3,
         "stream": True,
-        "stop": ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:"]
+        "options": {
+            "temperature": 0.3,
+            "stop": ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:"]
+        }
     }
 
     try:
-        response = requests.post(LLAMA_CPP_URL, json=payload, stream=True)
+        response = requests.post(OLLAMA_URL, json=payload, stream=True)
+
         response.raise_for_status()
 
         import json
@@ -59,27 +63,28 @@ def generate_response(
         for line in response.iter_lines():
             if line:
                 line = line.decode('utf-8')
-                if line.startswith("data: "):
-                    data_str = line[6:]
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(data_str)
-                        token = data.get("content", "")
-                        token = clean_token(token)
-                        full_reply += token
-                        current_sentence += token
-                        
-                        if full_reply.strip() and full_reply.strip()[0] == "{":
-                            is_tool_call = True
+                # print(f"Received line: {line}")  # Debug print to see raw lines
+                try:
+                    data = json.loads(line)
+                    token = data.get("response", "")
+                    token = clean_token(token)
+                    full_reply += token
+                    current_sentence += token
+                    
+                    if full_reply.strip() and full_reply.strip()[0] == "{":
+                        is_tool_call = True
 
-                        if not is_tool_call and any(p in token for p in [".", "?", "!"]):
+                    if not is_tool_call and any(p in token for p in [".", "?", "!"]) or data.get("done"):
+                        if current_sentence.strip():
                             # Simple sentence split
                             yield current_sentence.strip()
-                            current_sentence = ""
+                        current_sentence = ""
 
-                    except json.JSONDecodeError:
-                        continue
+                    if data.get("done"):
+                        break
+
+                except json.JSONDecodeError:
+                    continue
 
         if current_sentence.strip() and not is_tool_call:
             yield current_sentence.strip()
@@ -96,13 +101,16 @@ def generate_response(
                 
                 follow_up_prompt = f"The user asked: '{prompt}'.\n\nThe previous tool returned this result:\n{tool_result}\n\nBased on the tool result, answer the user's question clearly and concisely. Do not explain what tool you used. Do not repeat my prompt. Just give the answer."
                 follow_up_payload = {
+                    "model": OLLAMA_MODEL,
                     "prompt": PROMPT_TEMPLATE.format(prompt=follow_up_prompt),
-                    "temperature": 0.3,
                     "stream": True,
-                    "stop": ["<end_of_turn>", "<start_of_turn>", "User:"]
+                    "options": {
+                        "temperature": 0.3,
+                        "stop": ["<end_of_turn>", "<start_of_turn>", "User:"]
+                    }
                 }
                 
-                follow_up_response = requests.post(LLAMA_CPP_URL, json=follow_up_payload, stream=True)
+                follow_up_response = requests.post(OLLAMA_URL, json=follow_up_payload, stream=True)
                 follow_up_response.raise_for_status()
                 
                 final_reply = ""
@@ -110,22 +118,20 @@ def generate_response(
                 for line in follow_up_response.iter_lines():
                     if line:
                         line = line.decode('utf-8')
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                                token = data.get("content", "")
-                                token = clean_token(token)
-                                final_reply += token
-                                follow_up_sentence += token
-                                if any(p in token for p in [".", "?", "!"]):
+                        try:
+                            data = json.loads(line)
+                            token = data.get("response", "")
+                            token = clean_token(token)
+                            final_reply += token
+                            follow_up_sentence += token
+                            if any(p in token for p in [".", "?", "!"]) or data.get("done"):
+                                if follow_up_sentence.strip():
                                     yield follow_up_sentence.strip()
-                                    follow_up_sentence = ""
-
-                            except json.JSONDecodeError:
-                                continue
+                                follow_up_sentence = ""
+                            if data.get("done"):
+                                break
+                        except json.JSONDecodeError:
+                            continue
                 
                 if follow_up_sentence.strip():
                     yield follow_up_sentence.strip()
