@@ -25,6 +25,9 @@ def generate_response(
     prompt: str,
     confirm_tool: Callable[[str, dict[str, Any], str], bool] | None = None,
     on_state: Callable[[str], None] | None = None,
+    on_metrics: Callable[[dict[str, Any]], None] | None = None,
+    on_tool_result: Callable[[str, str], None] | None = None,
+    print_metrics: bool = True,
 ):
     global conversation_history
 
@@ -108,15 +111,18 @@ def generate_response(
             if on_state:
                 on_state("Using tool")
 
+            tool_name = "unknown"
             try:
                 tool_data = json.loads(reply)
-                tools_used.append(tool_data.get("tool", "unknown"))
+                tool_name = tool_data.get("tool", "unknown")
+                tools_used.append(tool_name)
             except json.JSONDecodeError:
                 pass
 
             tool_result = execute_tool(reply, confirm_tool=confirm_tool)
             if tool_result:
-                logger.info(f"Tool execution result: {tool_result}")
+                if on_tool_result:
+                    on_tool_result(tool_name, tool_result)
                 # console.print(f"[dim italic]\\[Tool Result]: Executed successfully. Summarizing...[/dim italic]")
                 
                 follow_up_prompt = f"The user asked: '{prompt}'.\n\nThe previous tool returned this result:\n{tool_result}\n\nBased on the tool result, answer the user's question clearly and concisely. Do not explain what tool you used. Do not repeat my prompt. Just give the answer."
@@ -178,7 +184,6 @@ def generate_response(
         #     if len(conversation_history) > MAX_HISTORY:
         #         conversation_history = conversation_history[-MAX_HISTORY:]
 
-        # Metrics
         end_time = time.time()
         think_time = (think_end - start_time) if think_end else 0
         gen_time = (end_time - start_time) - think_time if think_time else 1
@@ -187,8 +192,19 @@ def generate_response(
 
         tools_str = ", ".join(tools_used) if tools_used else "None"
 
-        metrics = f"\n\n[bold dim]Run Metrics:[/bold dim] Total Time: {total_time:.2f}s | Think Time: {think_time:.2f}s | Gen Time: {gen_time:.2f}s | Tokens: {token_count} | TPS: {tps:.2f} | Tools Used: {tools_str}"
-        console.print(metrics)
+        metrics_data = {
+            "total_time": total_time,
+            "think_time": think_time,
+            "gen_time": gen_time,
+            "tokens": token_count,
+            "tps": tps,
+            "tools_used": tools_str,
+        }
+        if on_metrics:
+            on_metrics(metrics_data)
+        if print_metrics:
+            metrics = f"\n\n[bold dim]Run Metrics:[/bold dim] Total Time: {total_time:.2f}s | Think Time: {think_time:.2f}s | Gen Time: {gen_time:.2f}s | Tokens: {token_count} | TPS: {tps:.2f} | Tools Used: {tools_str}"
+            console.print(metrics)
     except Exception as e:
         logger.error(f"LLM request failed: {e}")
         yield "I am having trouble connecting to my brain."

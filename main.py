@@ -1,14 +1,23 @@
 import logging
+import re
 import select
 import sys
 import argparse
+from typing import Any
 
 import openwakeword
 import speech_recognition as sr
 from kokoro import KPipeline
 from openwakeword.model import Model
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
 from rich.logging import RichHandler
+from rich.markdown import Markdown
+from rich.markup import escape
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+from rich.text import Text
 
 from config.settings import ASSISTANT_SETTINGS, SPEECH_SETTINGS, WAKE_WORD_SETTINGS
 from core.llm import generate_response
@@ -23,18 +32,141 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
     datefmt="[%X]",
-    handlers=[RichHandler()],
+    handlers=[
+        RichHandler(
+            show_time=False,
+            show_level=False,
+            show_path=False,
+            markup=True,
+            rich_tracebacks=True,
+        )
+    ],
 )
 
 logger = logging.getLogger("rich")
 console = Console()
+_last_state_key: tuple[str, str | None] | None = None
+
+STARTUP_ART = r"""
+      O                         +------------------+
+     /|\   "Jarvis?"            |  Online, sir.    |
+     / \                        |  JARVIS ready.   |
+                                +------------------+
+"""
+
+
+def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
+    return Panel(
+        renderable,
+        title=f" {title} ",
+        border_style=border_style,
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+
+
+def print_header(mode: str) -> None:
+    console.print()
+    console.print(Text(STARTUP_ART.rstrip(), style="cyan"))
+    console.rule(
+        f"[bold cyan]JARVIS[/bold cyan] [dim]{mode} mode / local assistant[/dim]",
+        style="bright_black",
+    )
+
+
+def reset_state() -> None:
+    global _last_state_key
+    _last_state_key = None
+
+
+def print_goodbye() -> None:
+    console.print(app_panel(Text("Goodbye.", style="bold yellow"), title="Session", border_style="yellow"))
 
 
 def set_state(state: str, detail: str | None = None) -> None:
-    message = f"[bold cyan]State:[/bold cyan] {state}"
+    global _last_state_key
+    key = (state, detail)
+    if key == _last_state_key:
+        return
+    _last_state_key = key
+
+    message = f"[dim]::[/dim] [cyan]{escape(state)}[/cyan]"
     if detail:
-        message += f" [dim]{detail}[/dim]"
+        message += f" [dim]{escape(detail)}[/dim]"
     console.print(message)
+
+
+def print_chat_message(speaker: str, message: str, *, style: str, markdown: bool = False) -> None:
+    if speaker in {"You", "Heard"}:
+        text = Text()
+        text.append(f"{speaker} ", style=f"bold {style}")
+        text.append("> ", style="dim")
+        text.append(message)
+        console.print(text)
+        return
+
+    content = Markdown(message) if markdown else Text(message)
+    label = Text(speaker, style=f"bold {style}")
+    panel = Panel(content, border_style="bright_black", box=box.ROUNDED, padding=(0, 1))
+    console.print(Group(label, panel))
+
+
+def print_metrics(metrics: dict[str, Any]) -> None:
+    tools = str(metrics["tools_used"])
+    text = Text("   ", style="dim")
+    text.append(f"{metrics['total_time']:.2f}s", style="cyan")
+    text.append(" total  |  ", style="dim")
+    text.append(f"{metrics['tokens']}", style="cyan")
+    text.append(" tokens  |  ", style="dim")
+    text.append(f"{metrics['tps']:.1f}", style="cyan")
+    text.append(" tps", style="dim")
+    if tools != "None":
+        text.append("  |  tool ", style="dim")
+        text.append(tools, style="cyan")
+    console.print(text)
+
+
+def extract_web_sources(tool_result: str, limit: int = 5) -> list[dict[str, str]]:
+    sources: list[dict[str, str]] = []
+    pattern = re.compile(
+        r"Result\s+\d+:\s*Title:\s*(?P<title>.*?)\s*URL:\s*(?P<url>.*?)\s*Snippet:",
+        re.DOTALL,
+    )
+    for match in pattern.finditer(tool_result):
+        title = " ".join(match.group("title").split())
+        url = " ".join(match.group("url").split())
+        if title and url and url != "No URL":
+            sources.append({"title": title, "url": url})
+        if len(sources) >= limit:
+            break
+    return sources
+
+
+def print_sources(sources: list[dict[str, str]]) -> None:
+    if not sources:
+        return
+
+    text = Text("   sources ", style="dim")
+    text.append(f"{len(sources)}", style="cyan")
+    console.print(text)
+    for index, source in enumerate(sources, start=1):
+        line = Text(f"   [{index}] ", style="dim")
+        line.append(source["title"], style="dim")
+        line.append(" - ", style="dim")
+        line.append(source["url"], style="cyan")
+        console.print(line)
+
+
+def stream_reply(reply_generator) -> str:
+    full_reply = ""
+    for chunk in reply_generator:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        full_reply = f"{full_reply} {chunk}".strip()
+    if full_reply:
+        print_chat_message("Jarvis", full_reply, style="cyan", markdown=True)
+    return full_reply
 
 
 def stdin_pressed() -> bool:
@@ -51,10 +183,16 @@ def confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     if not ASSISTANT_SETTINGS.get("confirm_risky_tools", True):
         return True
 
-    console.print(f"[bold yellow]Confirm {permission} tool:[/bold yellow] {tool_name} {args}")
-    console.print("[dim]Type y and press Enter to allow, anything else to cancel.[/dim]")
-    answer = input("> ").strip().lower()
-    return answer in {"y", "yes"}
+    body = Text()
+    body.append("Tool: ", style="dim")
+    body.append(tool_name, style="bold")
+    body.append("\nPermission: ", style="dim")
+    body.append(permission, style="yellow")
+    body.append("\nArgs: ", style="dim")
+    body.append(repr(args))
+    console.print(app_panel(body, title="Confirm Tool", border_style="yellow"))
+    answer = Prompt.ask("Allow tool?", choices=["y", "n"], default="n")
+    return answer == "y"
 
 
 def capture_command(
@@ -73,10 +211,9 @@ def capture_command(
             timeout_seconds=timeout,
             status_label="Follow-up" if follow_up else "Listening",
         )
-        console.print(
-            f"[bold blue]\\[Transcribed]:[/bold blue] '{result.text}' "
-            f"[dim](audio {result.audio_seconds:.1f}s, rms {result.rms:.3f})[/dim]"
-        )
+        transcript = Text(result.text or "No speech detected.", style="white")
+        transcript.append(f"\nAudio {result.audio_seconds:.1f}s / RMS {result.rms:.3f}", style="dim")
+        print_chat_message("Heard", transcript.plain, style="blue")
 
         if result.text:
             record_command(result.text)
@@ -99,7 +236,7 @@ def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
     if "what did you hear" in normalized or "what was the last command" in normalized:
         heard = last_heard()
         reply = f"The last thing I heard was: {heard}" if heard else "I do not have any command history yet."
-        console.print(f"[bold cyan]\\[Jarvis]:[/bold cyan] {reply}")
+        print_chat_message("Jarvis", reply, style="cyan")
         text_to_speech(pipeline, [reply], target_voice, interrupt_checker=stdin_pressed)
         return True
 
@@ -108,55 +245,66 @@ def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
 
 def print_health_checks() -> None:
     set_state("Health check")
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+    table.add_column("Status", width=8)
+    table.add_column("Check")
+    table.add_column("Detail", style="dim")
     for check in run_startup_health_checks():
         style = "green" if check.ok else "yellow"
         label = "OK" if check.ok else "WARN"
-        console.print(f"[{style}]{label}[/{style}] {check.name}: {check.detail}")
+        table.add_row(f"[{style}]{label}[/{style}]", check.name, check.detail)
+    console.print(app_panel(table, title="Health", border_style="green"))
 
 
 def main(mode: str = "voice"):
-    logger.info("Initializing system...")
-    
     if mode == "text":
-        console.print("\n[bold green]===============================[/bold green]")
-        console.print("[bold green]Text Mode Ready. Type your message below.[/bold green]")
-        console.print("[dim]Type 'quit', 'exit', or 'stop' to end.[/dim]")
-        console.print("[bold green]===============================[/bold green]")
+        print_header("text")
+        console.print("[dim]Type quit, exit, or stop to end.[/dim]\n")
         
         while True:
             try:
-                user_text = input("\nYou: ").strip()
+                user_text = Prompt.ask("\n[bold green]You[/bold green]").strip()
                 if not user_text:
                     continue
                 if user_text.lower() in {"quit", "exit", "stop"}:
-                    console.print("[bold yellow]Goodbye.[/bold yellow]")
+                    print_goodbye()
                     break
-                    
-                set_state("Thinking")
+
+                reset_state()
                 record_command(user_text)
-                reply_generator = generate_response(user_text, confirm_tool=confirm_tool, on_state=set_state)
-                
-                started_reply = False
-                for chunk in reply_generator:
-                    if not started_reply:
-                        console.print("[bold cyan]Jarvis:[/bold cyan] ", end="")
-                        started_reply = True
-                    console.print(chunk, end=" ", style="cyan", highlight=False)
-                if started_reply:
-                    console.print()
+                metrics: dict[str, Any] = {}
+                sources: list[dict[str, str]] = []
+
+                def collect_tool_result(tool_name: str, tool_result: str) -> None:
+                    if tool_name == "search_web":
+                        sources.extend(extract_web_sources(tool_result))
+
+                reply_generator = generate_response(
+                    user_text,
+                    confirm_tool=confirm_tool,
+                    on_state=set_state,
+                    on_metrics=metrics.update,
+                    on_tool_result=collect_tool_result,
+                    print_metrics=False,
+                )
+                stream_reply(reply_generator)
+                print_sources(sources)
+                if metrics:
+                    print_metrics(metrics)
                 
             except KeyboardInterrupt:
-                console.print("\n[bold yellow]Goodbye.[/bold yellow]")
+                print_goodbye()
                 break
             except EOFError:
-                console.print("\n[bold yellow]Goodbye.[/bold yellow]")
+                print_goodbye()
                 break
             except Exception as e:
                 set_state("Error")
-                console.print(f"[bold red]\\[Error in pipeline]:[/bold red] {e}")
+                print_chat_message("Error", str(e), style="red")
         return
 
-    logger.info("Initializing TTS and engines...")
+    print_header("voice")
+    set_state("Starting voice engines")
 
     wake_config = build_wake_config(WAKE_WORD_SETTINGS)
     speech_config = build_speech_config(SPEECH_SETTINGS, wake_config.microphone_device_index)
@@ -183,11 +331,7 @@ def main(mode: str = "voice"):
     except Exception as exc:
         console.print(f"[yellow]Microphone calibration skipped: {exc}[/yellow]")
 
-    console.print("\n[bold green]===============================[/bold green]")
-    console.print(
-        "[bold green]Pipeline Ready. Say 'Jarvis' or press Enter to talk.[/bold green]"
-    )
-    console.print("[bold green]===============================[/bold green]")
+    console.print("[dim]Say Jarvis or press Enter to talk.[/dim]")
 
     follow_up_mode = bool(ASSISTANT_SETTINGS.get("follow_up_mode", True))
     awaiting_follow_up = False
@@ -218,17 +362,34 @@ def main(mode: str = "voice"):
                 play_status_sound("sleep")
                 continue
 
-            console.print("[bold magenta]Got it.[/bold magenta]")
+            reset_state()
+            print_chat_message("You", user_text, style="green")
             set_state("Thinking")
 
-            reply_generator = generate_response(user_text, confirm_tool=confirm_tool, on_state=set_state)
+            metrics: dict[str, Any] = {}
+            sources: list[dict[str, str]] = []
 
-            set_state("Speaking", "press Enter between chunks to interrupt")
+            def collect_tool_result(tool_name: str, tool_result: str) -> None:
+                if tool_name == "search_web":
+                    sources.extend(extract_web_sources(tool_result))
+
+            reply_generator = generate_response(
+                user_text,
+                confirm_tool=confirm_tool,
+                on_state=set_state,
+                on_metrics=metrics.update,
+                on_tool_result=collect_tool_result,
+                print_metrics=False,
+            )
             full_reply = ""
+            started_speaking = False
 
             def intercept_generator(gen):
-                nonlocal full_reply
+                nonlocal full_reply, started_speaking
                 for chunk in gen:
+                    if not started_speaking:
+                        set_state("Speaking", "press Enter between chunks to interrupt")
+                        started_speaking = True
                     full_reply += chunk + " "
                     yield chunk
 
@@ -241,6 +402,11 @@ def main(mode: str = "voice"):
 
             if was_interrupted:
                 console.print("[yellow]Speech interrupted.[/yellow]")
+            if full_reply.strip():
+                print_chat_message("Jarvis", full_reply.strip(), style="cyan", markdown=True)
+            print_sources(sources)
+            if metrics:
+                print_metrics(metrics)
 
             awaiting_follow_up = follow_up_mode and not was_interrupted
             if awaiting_follow_up:
@@ -260,11 +426,11 @@ def main(mode: str = "voice"):
             awaiting_follow_up = False
             play_status_sound("sleep")
         except KeyboardInterrupt:
-            console.print("\n[bold yellow]Goodbye.[/bold yellow]")
+            print_goodbye()
             break
         except Exception as e:
             set_state("Error")
-            console.print(f"[bold red]\\[Error in pipeline]:[/bold red] {e}")
+            print_chat_message("Error", str(e), style="red")
             awaiting_follow_up = False
             play_status_sound("sleep")
 
