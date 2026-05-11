@@ -30,7 +30,7 @@ AVAILABLE_TOOLS = {
 TOOL_PROMPT = """
 You have access to the following tools:
 1. create_file(filename: str, content: str) - Creates or overwrites a file. Permission: risky, user confirmation required.
-2. search_web(query: str, num_results: int = 3) - Searches the web using DuckDuckGo and dynamically scrapes target page content. Permission: safe.
+2. search_web(query: str, num_results: int = 5) - Searches web. CRITICAL: Append current month and year to query (e.g. "Barcelona recent match score May 2026"). Avoid generic queries. Permission: safe.
 3. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact or preference into long-term memory. Permission: safe.
 4. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts and preferences. Permission: safe.
 5. open_app(app_name: str) - Opens a macOS application (e.g., 'Safari', 'Calculator'). Permission: risky, user confirmation required.
@@ -43,6 +43,7 @@ Example (open_app):
 {"tool": "open_app", "args": {"app_name": "Preview"}}
 
 CRITICAL RULES FOR JSON:
+- OUTPUT ONLY JSON. NO TEXT BEFORE OR AFTER JSON.
 - The entire JSON object MUST be on a single line.
 - Do NOT use raw newlines inside the content string. Use the literal characters \\n.
 - You MUST escape all double quotes inside the content string with \\".

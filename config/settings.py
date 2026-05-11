@@ -15,6 +15,7 @@ SETTINGS_FILE = BASE_DIR / "config" / "settings.toml"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "services": {
+        "llama_cpp_url": "http://127.0.0.1:8080/completion",
         "ollama_url": "http://127.0.0.1:11434/api/generate",
         "ollama_model": "gemma4:e2b",
         "searxng_url": "http://127.0.0.1:8080/search",
@@ -78,7 +79,7 @@ def load_settings(path: Path = SETTINGS_FILE) -> dict[str, Any]:
 
 SETTINGS = load_settings()
 
-# LLAMA_CPP_URL = SETTINGS["services"]["llama_cpp_url"]
+LLAMA_CPP_URL = SETTINGS["services"]["llama_cpp_url"]
 OLLAMA_URL = SETTINGS["services"]["ollama_url"]
 OLLAMA_MODEL = SETTINGS["services"]["ollama_model"]
 

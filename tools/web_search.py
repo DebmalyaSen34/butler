@@ -19,12 +19,12 @@ def fetch_url_content(url: str, timeout: int = 5) -> str:
         text = " ".join(text.split())  # Clean up whitespace
         
         # Truncate to reasonable length to avoid blowing up context window
-        return text[:1500] + ("..." if len(text) > 1500 else "")
+        return text[:2500] + ("..." if len(text) > 2500 else "")
     except Exception as e:
         logger.debug(f"Failed to fetch content from {url}: {e}")
         return ""
 
-def search_web(query: str, num_results: int = 3) -> str:
+def search_web(query: str, num_results: int = 5) -> str:
     """
     Search the web using DuckDuckGo and intelligently scrape target URLs for content.
     """
