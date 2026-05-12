@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from collections.abc import Callable
 from typing import Any
-from config.settings import PROMPT_TEMPLATE, OLLAMA_MODEL, OLLAMA_URL, LLAMA_CPP_URL
+from config.settings import ASSISTANT_PERSONA, PROMPT_TEMPLATE, OLLAMA_MODEL, OLLAMA_URL, LLAMA_CPP_URL
 from tools.registry import TOOL_PROMPT, execute_tool
 from rich.console import Console
 
@@ -16,7 +16,7 @@ conversation_history = []
 MAX_HISTORY = 10
 
 def clean_token(token: str) -> str:
-    tags = ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:", "[Gemma]:", "model\n"]
+    tags = ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:", "[Gemma]:", "model\n", "</start_of_turn>", "</end_of_turn>"]
     for tag in tags:
         token = token.replace(tag, "")
     return token
@@ -49,9 +49,20 @@ def generate_response(
     history_text = "\n".join(conversation_history)
 
     if history_text:
-        combined_prompt = f"{TOOL_PROMPT}\n\nToday's Date: {now}\n\nPrevious Conversation:\n{history_text}\n\nCurrent User: {prompt}"
+        combined_prompt = (
+            f"{ASSISTANT_PERSONA}\n\n"
+            f"{TOOL_PROMPT}\n\n"
+            f"Today's Date: {now}\n\n"
+            f"Previous Conversation:\n{history_text}\n\n"
+            f"Current User: {prompt}"
+        )
     else:
-        combined_prompt = f"{TOOL_PROMPT}\n\nToday's Date: {now}\n\nCurrent User: {prompt}"
+        combined_prompt = (
+            f"{ASSISTANT_PERSONA}\n\n"
+            f"{TOOL_PROMPT}\n\n"
+            f"Today's Date: {now}\n\n"
+            f"Current User: {prompt}"
+        )
 
     formatted_prompt = PROMPT_TEMPLATE.format(prompt=combined_prompt)
 
@@ -60,7 +71,7 @@ def generate_response(
         "prompt": formatted_prompt,
         "stream": True,
         "temperature": 0.3,
-        "stop": ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:"]
+        "stop": ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:", "</start_of_turn>", "</end_of_turn>"]
     }
 
     try:
@@ -96,14 +107,14 @@ def generate_response(
 
                         if not is_tool_call and any(p in token for p in [".", "?", "!"]):
                             # Simple sentence split
-                            yield current_sentence.strip()
+                            yield clean_token(current_sentence.strip())
                             current_sentence = ""
 
                     except json.JSONDecodeError:
                         continue
 
         if current_sentence.strip() and not is_tool_call:
-            yield current_sentence.strip()
+            yield clean_token(current_sentence.strip())
 
         reply = full_reply.strip()
 
@@ -125,13 +136,20 @@ def generate_response(
                     on_tool_result(tool_name, tool_result)
                 # console.print(f"[dim italic]\\[Tool Result]: Executed successfully. Summarizing...[/dim italic]")
                 
-                follow_up_prompt = f"The user asked: '{prompt}'.\n\nThe previous tool returned this result:\n{tool_result}\n\nBased on the tool result, answer the user's question clearly and concisely. Do not explain what tool you used. Do not repeat my prompt. Just give the answer."
+                follow_up_prompt = (
+                    f"{ASSISTANT_PERSONA}\n\n"
+                    f"The user asked: '{prompt}'.\n\n"
+                    f"The previous tool returned this result:\n{tool_result}\n\n"
+                    "Based on the tool result, answer in Jarvis's natural voice. "
+                    "Be clear and concise. Do not explain what tool you used. "
+                    "Do not repeat my prompt. Just give the answer."
+                )
                 follow_up_payload = {
                     # "model": OLLAMA_MODEL,
                     "prompt": PROMPT_TEMPLATE.format(prompt=follow_up_prompt),
                     "stream": True,
                     "temperature": 0.3,
-                    "stop": ["<end_of_turn>", "<start_of_turn>", "User:"]
+                    "stop": ["<end_of_turn>", "<start_of_turn>", "User:", "Current User:", "</start_of_turn>", "</end_of_turn>"]
                 }
                 
                 follow_up_response = requests.post(LLAMA_CPP_URL, json=follow_up_payload, stream=True)
@@ -154,21 +172,23 @@ def generate_response(
                                 final_reply += token
                                 follow_up_sentence += token
                                 if any(p in token for p in [".", "?", "!"]):
-                                    yield follow_up_sentence.strip()
+                                    yield clean_token(follow_up_sentence.strip())
                                     follow_up_sentence = ""
 
                             except json.JSONDecodeError:
                                 continue
                 
                 if follow_up_sentence.strip():
-                    yield follow_up_sentence.strip()
+                    yield clean_token(follow_up_sentence.strip())
                 
                 # Suppress the redundant whole-message print since `text` mode chunks it out and `voice` uses audio
                 # console.print(f"[bold cyan]\\[Gemma]:[/bold cyan] {final_reply.strip()}")
                 
                 conversation_history.append(f"User: {prompt}")
-                conversation_history.append(f"Assistant (used tool, result: {str(tool_result)[:100]}...): {final_reply.strip()}")
-                reply = final_reply.strip()
+                # conversation_history.append(f"Assistant (used tool, result: {str(tool_result)[:100]}...): {final_reply.strip()}")
+                reply = clean_token(final_reply.strip())
+                conversation_history.append(f"Assistant: {reply}")
+                # reply = final_reply.strip()
         else:
             conversation_history.append(f"User: {prompt}")
             conversation_history.append(f"Assistant: {reply}")

@@ -5,6 +5,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 def extract_json(text: str) -> dict | None:
+    
+    text = text.replace("<end_of_turn>", "").replace("</start_of_turn>", "").strip()
+
     try:
         # Avoid printing raw data here to keep output clean
         # print(f"This is the data:\n{text}")
