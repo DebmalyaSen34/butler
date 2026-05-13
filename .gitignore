@@ -9,3 +9,5 @@ __pycache__/
 *.log
 .agents/
 command_history.json
+docs/
+.worktrees/
