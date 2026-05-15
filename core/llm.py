@@ -140,7 +140,9 @@ def generate_response(
                     f"{ASSISTANT_PERSONA}\n\n"
                     f"The user asked: '{prompt}'.\n\n"
                     f"The previous tool returned this result:\n{tool_result}\n\n"
-                    "Based on the tool result, answer in Jarvis's natural voice. "
+                    "Based on the tool result, extract the hard facts and answer the user directly. "
+                    "Do NOT summarize the search result descriptions (e.g., avoid 'This article talks about...'). "
+                    "If the search result does not contain the answer, say so. "
                     "Be clear and concise. Do not explain what tool you used. "
                     "Do not repeat my prompt. Just give the answer."
                 )
