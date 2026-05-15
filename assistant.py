@@ -1,7 +1,7 @@
 import speech_recognition as sr
 from kokoro import KPipeline
 from openwakeword.model import Model
-from core.llm import generate_response
+from core.orchestrator import run_react_loop
 from engine.wake_word import wake_word_detection
 from engine.stt import speech_to_text
 from engine.tts import text_to_speech
@@ -38,7 +38,7 @@ def main():
                 print("[No speech detected. Going back to sleep.]")
                 continue
 
-            gemma_reply = generate_response(user_text)
+            gemma_reply = run_react_loop(user_text)
 
             print("[Speaking...]")
             text_to_speech(pipeline, gemma_reply, target_voice)

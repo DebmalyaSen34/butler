@@ -10,7 +10,7 @@ A local, voice-activated AI assistant built with a modular architecture. This pr
 - **Brain / LLM Engine:** Connects to a local `llama.cpp` server (defaulting to Gemma variants). It maintains conversation history for context-aware responses.
 - **Text-to-Speech (TTS):** Natural and expressive voice synthesis via the `kokoro` TTS engine.
 - **Tool Calling:** The assistant can autonomously use tools to fulfill requests:
-  - **Web Search:** Searches the internet using a local [SearxNG](https://github.com/searxng/searxng) instance and summarizes the results.
+  - **Web Search:** Uses a free/local-first retrieval pipeline. Jarvis queries local [SearxNG](https://github.com/searxng/searxng) first, falls back to DDGS when needed, fetches result pages, extracts structured evidence, and returns citations plus confidence/caveats.
   - **File Operations:** Can create files dynamically on your computer.
   - **Memory:** Can remember facts and preferences in structured local memory.
   - **System Operations:** Can open apps and report the current time.
@@ -49,7 +49,7 @@ Because STT natively uses `mlx_whisper` and audio cues run via `afplay`, this pr
 
 You will also need two local services running in the background for the assistant to fully function:
 1. **Llama.cpp Server:** An LLM server for the brain. Default configured URL: `http://127.0.0.1:3000/completion`
-2. **SearxNG Server:** A privacy-respecting metasearch engine for the web search tool. Default configured URL: `http://127.0.0.1:8080/search`
+2. **SearxNG Server:** Optional but recommended for local-first web search. If SearxNG is unavailable, Jarvis falls back to DDGS for basic web results. Default configured URL: `http://127.0.0.1:8080/search`
 
 You can change these URLs in `config/settings.toml`.
 
