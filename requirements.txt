@@ -10,4 +10,4 @@ kokoro
 ddgs
 beautifulsoup4
 fastapi
-uvicornp[standard]
+uvicorn[standard]
