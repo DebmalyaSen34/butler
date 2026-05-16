@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from collections.abc import Callable
 from typing import Any
-from config.settings import ASSISTANT_PERSONA, PROMPT_TEMPLATE, OLLAMA_MODEL, OLLAMA_URL, LLAMA_CPP_URL
+from config.settings import ASSISTANT_PERSONA, PROMPT_TEMPLATE, LLAMA_CPP_URL
 from tools.registry import TOOL_PROMPT, execute_tool
 from rich.console import Console
 
@@ -36,11 +36,6 @@ def generate_response(
     token_count = 0
     tools_used = []
 
-    # if not hasattr(generate_response, "_mode"):
-    #     # We can just skip console prints that are redundant, or let them be but remove the tags that break text.
-    #     pass
-        
-    # console.print(f"\n[dim italic]\\[Thinking...] Gemma is processing: '{prompt}'[/dim italic]")
     if on_state:
         on_state("Thinking")
 
@@ -67,7 +62,6 @@ def generate_response(
     formatted_prompt = PROMPT_TEMPLATE.format(prompt=combined_prompt)
 
     payload = {
-        # "model": OLLAMA_MODEL,
         "prompt": formatted_prompt,
         "stream": True,
         "temperature": 0.3,
@@ -134,7 +128,6 @@ def generate_response(
             if tool_result:
                 if on_tool_result:
                     on_tool_result(tool_name, tool_result)
-                # console.print(f"[dim italic]\\[Tool Result]: Executed successfully. Summarizing...[/dim italic]")
                 
                 follow_up_prompt = (
                     f"{ASSISTANT_PERSONA}\n\n"
@@ -147,7 +140,6 @@ def generate_response(
                     "Do not repeat my prompt. Just give the answer."
                 )
                 follow_up_payload = {
-                    # "model": OLLAMA_MODEL,
                     "prompt": PROMPT_TEMPLATE.format(prompt=follow_up_prompt),
                     "stream": True,
                     "temperature": 0.3,
@@ -183,29 +175,15 @@ def generate_response(
                 if follow_up_sentence.strip():
                     yield clean_token(follow_up_sentence.strip())
                 
-                # Suppress the redundant whole-message print since `text` mode chunks it out and `voice` uses audio
-                # console.print(f"[bold cyan]\\[Gemma]:[/bold cyan] {final_reply.strip()}")
-                
                 conversation_history.append(f"User: {prompt}")
-                # conversation_history.append(f"Assistant (used tool, result: {str(tool_result)[:100]}...): {final_reply.strip()}")
                 reply = clean_token(final_reply.strip())
                 conversation_history.append(f"Assistant: {reply}")
-                # reply = final_reply.strip()
         else:
             conversation_history.append(f"User: {prompt}")
             conversation_history.append(f"Assistant: {reply}")
         if len(conversation_history) > MAX_HISTORY:
                 conversation_history = conversation_history[-MAX_HISTORY:]
         
-        # if not is_tool_call:
-        #     # Suppress the redundant whole-message print
-        #     # console.print(f"[bold cyan]\\[Gemma]:[/bold cyan] {reply}")
-
-        #     conversation_history.append(f"User: {prompt}")
-        #     conversation_history.append(f"Assistant: {reply}")
-        #     if len(conversation_history) > MAX_HISTORY:
-        #         conversation_history = conversation_history[-MAX_HISTORY:]
-
         end_time = time.time()
         think_time = (think_end - start_time) if think_end else 0
         gen_time = (end_time - start_time) - think_time if think_time else 1
