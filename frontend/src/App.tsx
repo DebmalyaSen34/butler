@@ -27,8 +27,12 @@ function App() {
   }, [messages]);
 
   useEffect(() => {
+
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const host = window.location.hostname;
+
     // Make sure this matches your working port (e.g. 8080)
-    const ws = new WebSocket('ws://localhost:8080/ws/chat');
+    const ws = new WebSocket(`${protocol}://${host}:8080/ws/chat`);
     
     ws.onopen = () => {
       console.log('Connected to Jarvis');
