@@ -1,124 +1,243 @@
 # Jarvis AI Assistant
 
-A local, voice-activated AI assistant built with a modular architecture. This project integrates state-of-the-art local models for Wake Word detection, Speech-to-Text (STT), Large Language Models (LLM), and Text-to-Speech (TTS), complemented by dynamic tool-calling capabilities (like web search and file creation).
+Jarvis is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
 
-## Features
+## What It Can Do
 
-- **Wake Word Detection:** Always-on listening using `openwakeword`. Say **"Jarvis"** to wake the assistant, or press **Enter** for push-to-talk fallback.
-- **Wake Diagnostics:** Configurable threshold, smoothing, cooldown, microphone calibration, live wake score display, and input level feedback.
-- **Speech-to-Text (STT):** High-performance, local STT powered by `mlx_whisper` (optimized for Apple Silicon), with stable prompting, retry behavior, and audio capture diagnostics.
-- **Brain / LLM Engine:** Connects to a local `llama.cpp` server (defaulting to Gemma variants). It maintains conversation history for context-aware responses.
-- **Text-to-Speech (TTS):** Natural and expressive voice synthesis via the `kokoro` TTS engine.
-- **Tool Calling:** The assistant can autonomously use tools to fulfill requests:
-  - **Web Search:** Uses a free/local-first retrieval pipeline. Jarvis queries local [SearxNG](https://github.com/searxng/searxng) first, falls back to DDGS when needed, fetches result pages, extracts structured evidence, and returns citations plus confidence/caveats.
-  - **File Operations:** Can create files dynamically on your computer.
-  - **Memory:** Can remember facts and preferences in structured local memory.
-  - **System Operations:** Can open apps and report the current time.
-- **Tool Permissions:** Risky tools like file creation and app opening ask for confirmation before running.
-- **Follow-up Mode:** Jarvis keeps listening briefly after a response so you do not need to repeat the wake word for every follow-up.
-- **Rich Terminal UX:** Colorful, intuitive terminal logging using `rich`.
-- **Audio Feedback:** macOS native audio cues (`afplay`) to indicate when Jarvis wakes up and goes back to sleep.
+- **Voice interaction:** Say **"Jarvis"** to wake the assistant, or press **Enter** for push-to-talk.
+- **Wake diagnostics:** Tune threshold, smoothing, cooldown, calibration, wake scores, and input levels from local settings.
+- **Local speech-to-text:** Transcribes microphone input with `mlx-whisper`, including retry and audio-capture diagnostics.
+- **LLM orchestration:** Maintains conversation history and runs a tool-feedback loop around local model responses.
+- **Text-to-speech:** Speaks responses through Kokoro voice synthesis.
+- **Tool calling:** Searches the web, creates files, stores memories, opens apps, and reports the current time.
+- **Tool permissions:** Risky actions, such as file creation and app opening, can require confirmation.
+- **Follow-up mode:** Keeps listening briefly after a reply so you can continue without repeating the wake word.
+- **Web UI:** Includes a FastAPI WebSocket backend and a React/Vite frontend for browser-based chat.
+- **Terminal UX:** Uses `rich` for readable console output and macOS `afplay` cues for wake/sleep sounds.
 
-## Architecture & Directory Structure
+## Project Structure
 
 ```text
 jarvis/
-├── main.py                # Main entry point: coordinates the STT, LLM, TTS, and wake word engines
-├── requirements.txt       # Python dependencies
+├── main.py                 # Voice assistant entry point
+├── assistant.py            # Assistant-facing orchestration helpers
+├── requirements.txt        # Python dependencies
+├── docker-compose.yml      # API + frontend containers
+├── Dockerfile.api          # FastAPI backend image
+├── Dockerfile.frontend     # React frontend image
+├── api/
+│   └── main.py             # FastAPI WebSocket chat API
 ├── config/
-│   ├── settings.py        # Loads typed defaults and local TOML settings
-│   └── settings.toml      # Local ports, wake sensitivity, voice, and STT settings
+│   ├── settings.py         # Typed defaults and settings loader
+│   └── settings.toml       # Local service, wake, speech, and assistant settings
 ├── core/
-│   └── llm.py             # LLM orchestration, conversation history, and tool feedback loops
+│   ├── llm.py              # LLM response generation and tool loop
+│   └── orchestrator.py     # Assistant orchestration layer
 ├── engine/
-│   ├── stt.py             # Speech-to-Text handler (MLX Whisper)
-│   ├── tts.py             # Text-to-Speech handler (Kokoro)
-│   └── wake_word.py       # Wake word detection logic
+│   ├── stt.py              # Speech-to-text handling
+│   ├── tts.py              # Text-to-speech handling
+│   └── wake_word.py        # Wake-word detection
+├── frontend/
+│   ├── src/                # React chat interface
+│   ├── nginx/              # Static app server config
+│   └── package.json        # Vite scripts and frontend dependencies
+├── memory/
+│   └── graph.py            # Local memory graph support
 ├── tools/
-│   ├── registry.py        # Maps tool configurations and provides tools prompt context
-│   ├── web_search.py      # SearxNG web search tool implementation
-│   └── file_ops.py        # File creation tool implementation
-└── utils/
-    ├── audio.py           # Handles macOS native audio cues (`afplay`)
-    └── parser.py          # Robust JSON parsing for LLM tool execution strings
+│   ├── registry.py         # Tool definitions and prompt context
+│   ├── file_ops.py         # File creation tool
+│   ├── memory_ops.py       # Memory tools
+│   ├── system_ops.py       # System tools
+│   ├── web_search.py       # Web-search tool entry point
+│   └── search/             # Search providers, planning, ranking, fetching, extraction
+├── utils/
+│   ├── audio.py            # macOS sound cues
+│   ├── health.py           # Service health checks
+│   ├── history.py          # Command/conversation history helpers
+│   └── parser.py           # Robust JSON/tool-call parsing
+└── tests/                  # Unit tests for parser, tools, search, memory, and wake word logic
 ```
 
 ## Prerequisites
 
-Because STT natively uses `mlx_whisper` and audio cues run via `afplay`, this project is highly optimized for **macOS (Apple Silicon)**.
+Jarvis is optimized for **macOS on Apple Silicon** because the voice pipeline uses `mlx-whisper` and macOS audio cues. Some server-only pieces can run in containers, but microphone capture and local audio playback are best run directly on macOS.
 
-You will also need two local services running in the background for the assistant to fully function:
-1. **Llama.cpp Server:** An LLM server for the brain. Default configured URL: `http://127.0.0.1:3000/completion`
-2. **SearxNG Server:** Optional but recommended for local-first web search. If SearxNG is unavailable, Jarvis falls back to DDGS for basic web results. Default configured URL: `http://127.0.0.1:8080/search`
+You will need:
 
-You can change these URLs in `config/settings.toml`.
+- Python 3.11+
+- A working microphone with terminal/app permission
+- PortAudio dependencies for `pyaudio` and `sounddevice`
+- A local LLM service, usually `llama.cpp`
+- Optional local SearxNG for local-first web search
+- Node/Bun only if you are developing the frontend outside Docker
+
+Default service URLs are configured in [`config/settings.py`](config/settings.py) and can be overridden in [`config/settings.toml`](config/settings.toml).
 
 ## Installation
 
-1. **Clone the repository:**
+1. Clone the repository:
+
    ```bash
    git clone <repository-url>
    cd jarvis
    ```
 
-2. **Create a virtual environment (recommended):**
+2. Create and activate a virtual environment:
+
    ```bash
    python -m venv .venv
    source .venv/bin/activate
    ```
 
-3. **Install dependencies:**
+3. Install Python dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
-   *(Note: Ensure you have the proper system packages for `SpeechRecognition`, `mlx_whisper`, `openwakeword`, and `kokoro`.)*
 
-## Services Setup
+If audio dependencies fail to build, install PortAudio first, then rerun the Python dependency install.
 
-### 1. Start the LLM (llama.cpp)
-Run a compatible instruction-tuned model (e.g., Gemma 2 or Llama 3) via the `llama-server` binary on port `3000`:
+## Local Services
+
+### Start llama.cpp
+
+Run a compatible instruction-tuned GGUF model on port `3000`:
+
 ```bash
 ./llama-server -m /path/to/your/model.gguf -c 4096 --port 3000
 ```
 
-### 2. Start SearxNG (Docker)
-To enable the web search capability, run a local SearxNG container mapped to port `8080`:
+Jarvis expects the default completion endpoint at:
+
+```text
+http://127.0.0.1:3000/completion
+```
+
+### Start SearxNG
+
+SearxNG is optional but recommended for higher-quality local-first search. By default, Jarvis looks for:
+
+```text
+http://127.0.0.1:8080/search
+```
+
+Example Docker command:
+
 ```bash
 docker run -d -p 8080:8080 \
   -e "BASE_URL=http://localhost:8080/" \
   searxng/searxng
 ```
 
-## Usage
+If SearxNG is unavailable, Jarvis falls back to DDGS.
 
-1. Ensure your microphone is connected and authorized.
-2. Run the main script:
+## Run The Voice Assistant
+
+1. Confirm the LLM service is running.
+2. Confirm your microphone is connected and authorized.
+3. Start Jarvis:
+
    ```bash
    python main.py
    ```
-3. Await the ready prompt in the terminal: `Pipeline Ready. Say 'Jarvis' to wake me.`
-4. Say **"Jarvis"** or press **Enter**. Once the wake chime plays, specify your query or command (e.g., *"What is the latest news on AI?"* or *"Create a file named hello.txt that says hi"*).
-5. After a response, Jarvis listens briefly for a follow-up. Let the follow-up window time out to return to sleep.
 
-## Customization
+4. Wait for:
 
-- **Voices:** Change `assistant.tts_voice` in `config/settings.toml` to any compatible Kokoro voice.
-- **Wake Word:** By default, `openwakeword` loads the `jarvis` model. You can modify `wake_word.models`, `wake_word.threshold`, and smoothing options in `config/settings.toml`.
-- **Push-to-talk:** `wake_word.push_to_talk = true` enables pressing Enter from the terminal to bypass wake-word detection.
-- **Speech Recognition:** Change the Whisper model, listening timeout, pause threshold, and retry behavior under the `speech` section.
-- **System Prompts:** You can adjust the LLM structure and behavior via `config/settings.py` by editing the `PROMPT_TEMPLATE`.
+   ```text
+   Pipeline Ready. Say 'Jarvis' to wake me.
+   ```
+
+5. Say **"Jarvis"** or press **Enter**, then speak your request.
+
+Example requests:
+
+```text
+What is the latest news on AI?
+Remember that I prefer concise responses.
+Create a file named hello.txt that says hi.
+Open Safari.
+```
+
+## Run The Web UI
+
+The web UI has two parts:
+
+- FastAPI backend: WebSocket endpoint at `ws://localhost:8080/ws/chat`
+- React/Vite frontend: browser chat interface under [`frontend/`](frontend/)
+
+### Backend
+
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port 8080
+```
+
+### Frontend
+
+```bash
+cd frontend
+bun install
+bun run dev
+```
+
+The frontend opens a WebSocket to port `8080`, so keep the API running while using the browser UI.
+
+## Docker
+
+You can build and run the API and frontend together:
+
+```bash
+docker compose up --build
+```
+
+The compose file exposes:
+
+- API: `http://localhost:8080`
+- Frontend: `http://localhost`
+
+The API container is configured to reach host services through `host.docker.internal`. Keep llama.cpp and any external SearxNG instance running on the host, then update [`docker-compose.yml`](docker-compose.yml) if your ports differ.
+
+## Configuration
+
+Most runtime behavior lives in [`config/settings.toml`](config/settings.toml):
+
+- `services.llama_cpp_url`
+- `services.ollama_url`
+- `services.ollama_model`
+- `services.searxng_url`
+- `wake_word.threshold`
+- `wake_word.push_to_talk`
+- `speech.whisper_model`
+- `speech.timeout_seconds`
+- `speech.follow_up_timeout_seconds`
+- `assistant.tts_voice`
+- `assistant.follow_up_mode`
+- `assistant.confirm_risky_tools`
+- `assistant.persona`
+
+When a key is missing, Jarvis falls back to defaults in [`config/settings.py`](config/settings.py).
 
 ## Testing
 
-Run the focused test suite:
+Run the test suite from the repository root:
 
 ```bash
 python -m unittest discover -s tests
 ```
 
-## Logging and Troubleshooting
+For the frontend:
 
-- The project uses `rich` for clean, colorful console logs.
-- On startup, Jarvis checks microphone visibility and whether llama.cpp and SearxNG are reachable.
-- Wake-word debug output shows raw/smoothed scores and microphone dBFS. If wake detection feels too strict, lower `wake_word.threshold`; if it false-wakes, raise it.
-- If the LLM generates improper tool-calling schema, `utils/parser.py` includes robust regex bounds to attempt self-correction. Watch the terminal output for instances where the agent skips a step due to JSON decoding issues.
+```bash
+cd frontend
+bun run lint
+bun run build
+```
+
+## Troubleshooting
+
+- **No wake detection:** Check microphone permissions, input device selection, and `wake_word.threshold`.
+- **False wakes:** Increase `wake_word.threshold` or `wake_word.required_hits`.
+- **No transcription:** Confirm `mlx-whisper`, microphone access, and PortAudio dependencies are working.
+- **No LLM response:** Confirm the llama.cpp completion endpoint matches `services.llama_cpp_url`.
+- **Search is weak or failing:** Start SearxNG or verify `services.searxng_url`; DDGS fallback may be less consistent.
+- **Web UI cannot connect:** Make sure the FastAPI backend is running on port `8080`.
+- **Tool call JSON errors:** Check terminal logs. [`utils/parser.py`](utils/parser.py) includes recovery logic, but malformed model output can still skip a tool step.
