@@ -2,6 +2,7 @@ import json
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+import re
 
 from core.llm import generate_response
 
@@ -22,6 +23,16 @@ def auto_confirm_tool(tool_name: str, args: dict, permission: str) -> bool:
     # Auto-resolves tool confirmations in the web UI for now. 
     # Can be updated to parse via WebSockets later.
     return True
+
+def clean_chunk(text: str) -> str:
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<channel\|>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"</?think>", "", text)
+    text = re.sub(r"<\|channel\|>thought", "", text)
+    text = re.sub(r"<channel>thought", "", text)
+    text = re.sub(r"<\|startofthought\|>thought", "", text)
+    text = re.sub(r"<\|endofthought\|>thought", "", text)
+    return text
 
 @app.websocket("/ws/chat")
 async def chat_endpoint(websocket: WebSocket):
@@ -45,6 +56,7 @@ async def chat_endpoint(websocket: WebSocket):
 
             # 3 - Stream response back to client
             for chunk in reply_generator:
+                chunk = clean_chunk(chunk)
                 if chunk.strip():
                     await websocket.send_json(
                         {

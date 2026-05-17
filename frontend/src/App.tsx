@@ -29,10 +29,10 @@ function App() {
   useEffect(() => {
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const host = window.location.hostname;
+    const host = window.location.host;
 
     // Make sure this matches your working port (e.g. 8080)
-    const ws = new WebSocket(`${protocol}://${host}:8080/ws/chat`);
+    const ws = new WebSocket(`${protocol}://${host}/ws/chat`);
     
     ws.onopen = () => {
       console.log('Connected to Jarvis');
@@ -43,7 +43,7 @@ function App() {
       const data = JSON.parse(event.data);
       
       if (data.type === 'chunk') {
-        setIsProcessing(false); // Stop processing state as soon as we get the first chunk
+        // setIsProcessing(false); // Stop processing state as soon as we get the first chunk
         
         setMessages(prev => {
           const newMessages = [...prev];
