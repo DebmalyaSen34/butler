@@ -13,3 +13,4 @@ docs/
 .worktrees/
 outputs/
 .env
+.DS_Store
