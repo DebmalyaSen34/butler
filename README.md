@@ -1,10 +1,10 @@
-# Jarvis AI Assistant
+# Helium Agent
 
-Jarvis is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
+Helium is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
 
 ## What It Can Do
 
-- **Voice interaction:** Say **"Jarvis"** to wake the assistant, or press **Enter** for push-to-talk.
+- **Voice interaction:** Say **"Helium"** to wake the assistant, or press **Enter** for push-to-talk.
 - **Wake diagnostics:** Tune threshold, smoothing, cooldown, calibration, wake scores, and input levels from local settings.
 - **Local speech-to-text:** Transcribes microphone input with `mlx-whisper`, including retry and audio-capture diagnostics.
 - **LLM orchestration:** Maintains conversation history and runs a tool-feedback loop around local model responses.
@@ -18,7 +18,7 @@ Jarvis is a local-first AI assistant with a voice pipeline, tool-calling agent l
 ## Project Structure
 
 ```text
-jarvis/
+Helium/
 ├── main.py                 # Voice assistant entry point
 ├── assistant.py            # Assistant-facing orchestration helpers
 ├── requirements.txt        # Python dependencies
@@ -60,7 +60,7 @@ jarvis/
 
 ## Prerequisites
 
-Jarvis is optimized for **macOS on Apple Silicon** because the voice pipeline uses `mlx-whisper` and macOS audio cues. Some server-only pieces can run in containers, but microphone capture and local audio playback are best run directly on macOS.
+Helium is optimized for **macOS on Apple Silicon** because the voice pipeline uses `mlx-whisper` and macOS audio cues. Some server-only pieces can run in containers, but microphone capture and local audio playback are best run directly on macOS.
 
 You will need:
 
@@ -79,7 +79,7 @@ Default service URLs are configured in [`config/settings.py`](config/settings.py
 
    ```bash
    git clone <repository-url>
-   cd jarvis
+   cd Helium
    ```
 
 2. Create and activate a virtual environment:
@@ -107,7 +107,7 @@ Run a compatible instruction-tuned GGUF model on port `3000`:
 ./llama-server -m /path/to/your/model.gguf -c 4096 --port 3000
 ```
 
-Jarvis expects the default completion endpoint at:
+Helium expects the default completion endpoint at:
 
 ```text
 http://127.0.0.1:3000/completion
@@ -115,7 +115,7 @@ http://127.0.0.1:3000/completion
 
 ### Start SearxNG
 
-SearxNG is optional but recommended for higher-quality local-first search. By default, Jarvis looks for:
+SearxNG is optional but recommended for higher-quality local-first search. By default, Helium looks for:
 
 ```text
 http://127.0.0.1:8080/search
@@ -129,13 +129,13 @@ docker run -d -p 8080:8080 \
   searxng/searxng
 ```
 
-If SearxNG is unavailable, Jarvis falls back to DDGS.
+If SearxNG is unavailable, Helium falls back to DDGS.
 
 ## Run The Voice Assistant
 
 1. Confirm the LLM service is running.
 2. Confirm your microphone is connected and authorized.
-3. Start Jarvis:
+3. Start Helium:
 
    ```bash
    python main.py
@@ -144,10 +144,10 @@ If SearxNG is unavailable, Jarvis falls back to DDGS.
 4. Wait for:
 
    ```text
-   Pipeline Ready. Say 'Jarvis' to wake me.
+   Pipeline Ready. Say 'Helium' to wake me.
    ```
 
-5. Say **"Jarvis"** or press **Enter**, then speak your request.
+5. Say **"Helium"** or press **Enter**, then speak your request.
 
 Example requests:
 
@@ -214,7 +214,7 @@ Most runtime behavior lives in [`config/settings.toml`](config/settings.toml):
 - `assistant.confirm_risky_tools`
 - `assistant.persona`
 
-When a key is missing, Jarvis falls back to defaults in [`config/settings.py`](config/settings.py).
+When a key is missing, Helium falls back to defaults in [`config/settings.py`](config/settings.py).
 
 ## Testing
 
