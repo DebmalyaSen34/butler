@@ -24,6 +24,7 @@ from core.llm import generate_response
 from engine.stt import build_speech_config, speech_to_text
 from engine.tts import text_to_speech
 from engine.wake_word import build_wake_config, calibrate_microphone, wake_word_detection
+from utils.start_animation import render_startup_intro
 from utils.audio import play_status_sound
 from utils.health import run_startup_health_checks
 from utils.history import last_heard, record_command
@@ -47,13 +48,6 @@ logger = logging.getLogger("rich")
 console = Console()
 _last_state_key: tuple[str, str | None] | None = None
 
-STARTUP_ART = r"""
-      O                         +------------------+
-     /|\   "Jarvis?"            |  Online, sir.    |
-     / \                        |  JARVIS ready.   |
-                                +------------------+
-"""
-
 
 def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
     return Panel(
@@ -67,9 +61,9 @@ def app_panel(renderable, *, title: str, border_style: str = "cyan") -> Panel:
 
 def print_header(mode: str) -> None:
     console.print()
-    console.print(Text(STARTUP_ART.rstrip(), style="cyan"))
+    render_startup_intro()
     console.rule(
-        f"[bold cyan]JARVIS[/bold cyan] [dim]{mode} mode / local assistant[/dim]",
+        f"[bold cyan]HELIUM AGENT[/bold cyan] [dim]{mode} mode / local assistant[/dim]",
         style="bright_black",
     )
 
@@ -165,7 +159,7 @@ def stream_reply(reply_generator) -> str:
             continue
         full_reply = f"{full_reply} {chunk}".strip()
     if full_reply:
-        print_chat_message("Jarvis", full_reply, style="cyan", markdown=True)
+        print_chat_message("Helium", full_reply, style="cyan", markdown=True)
     return full_reply
 
 
@@ -236,7 +230,7 @@ def handle_local_command(user_text: str, pipeline, target_voice: str) -> bool:
     if "what did you hear" in normalized or "what was the last command" in normalized:
         heard = last_heard()
         reply = f"The last thing I heard was: {heard}" if heard else "I do not have any command history yet."
-        print_chat_message("Jarvis", reply, style="cyan")
+        print_chat_message("Helium", reply, style="cyan")
         text_to_speech(pipeline, [reply], target_voice, interrupt_checker=stdin_pressed)
         return True
 
@@ -331,7 +325,7 @@ def main(mode: str = "voice"):
     except Exception as exc:
         console.print(f"[yellow]Microphone calibration skipped: {exc}[/yellow]")
 
-    console.print("[dim]Say Jarvis or press Enter to talk.[/dim]")
+    console.print("[dim]Say Helium or press Enter to talk.[/dim]")
 
     follow_up_mode = bool(ASSISTANT_SETTINGS.get("follow_up_mode", True))
     awaiting_follow_up = False
@@ -341,7 +335,7 @@ def main(mode: str = "voice"):
             if awaiting_follow_up:
                 set_state("Listening", "follow-up window")
             else:
-                set_state("Sleeping", "say Jarvis or press Enter")
+                set_state("Sleeping", "say Helium or press Enter")
                 diagnostics = wake_word_detection(oww_model, wake_config)
                 play_status_sound("wake")
                 set_state(
@@ -403,7 +397,7 @@ def main(mode: str = "voice"):
             if was_interrupted:
                 console.print("[yellow]Speech interrupted.[/yellow]")
             if full_reply.strip():
-                print_chat_message("Jarvis", full_reply.strip(), style="cyan", markdown=True)
+                print_chat_message("Helium", full_reply.strip(), style="cyan", markdown=True)
             print_sources(sources)
             if metrics:
                 print_metrics(metrics)
@@ -415,7 +409,7 @@ def main(mode: str = "voice"):
                 )
             else:
                 play_status_sound("sleep")
-                console.print("\n[dim]\\[Sleeping..] Say Jarvis to wake me up.[/dim]")
+                console.print("\n[dim]\\[Sleeping..] Say Helium to wake me up.[/dim]")
 
         except sr.WaitTimeoutError:
             console.print("[dim]Timed out waiting for a command. Going back to sleep.[/dim]")
@@ -436,7 +430,7 @@ def main(mode: str = "voice"):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Jarvis AI Assistant")
+    parser = argparse.ArgumentParser(description="Helium Agent")
     parser.add_argument("--mode", type=str, choices=["voice", "text"], default="voice", help="Interaction mode (voice or text)")
     args = parser.parse_args()
     
