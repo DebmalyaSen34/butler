@@ -28,12 +28,23 @@ function App() {
 
   useEffect(() => {
 
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const host = window.location.hostname;
+    var protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    var host = window.location.hostname;
+
+    //! Change this later
+    if (import.meta.env.DEV){
+      protocol = 'http';
+      host = 'localhost';
+    }
+
+    console.log(import.meta.env.VITE_API_PORT);
+
+
+    const port = import.meta.env.VITE_API_PORT || 8080;
 
     // Make sure this matches your working port (e.g. 8080)
-    const ws = new WebSocket(`${protocol}://${host}:8080/ws/chat`);
-    
+    const ws = new WebSocket(`${protocol}://${host}:${port}/ws/chat`);
+
     ws.onopen = () => {
       console.log('Connected to Jarvis');
       setIsConnected(true);
@@ -41,28 +52,28 @@ function App() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      
+
       if (data.type === 'chunk') {
         setIsProcessing(false); // Stop processing state as soon as we get the first chunk
-        
+
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMsg = newMessages[newMessages.length - 1];
-          
+
           if (lastMsg && lastMsg.role === 'ai') {
             // If the message is marked as loading, overwrite it with the first chunk
             if (lastMsg.isLoading) {
-               newMessages[newMessages.length - 1] = {
-                  ...lastMsg,
-                  content: data.content,
-                  isLoading: false
-               };
+              newMessages[newMessages.length - 1] = {
+                ...lastMsg,
+                content: data.content,
+                isLoading: false
+              };
             } else {
-               // Append chunk to current AI message
-               newMessages[newMessages.length - 1] = {
-                 ...lastMsg,
-                 content: lastMsg.content + data.content
-               };
+              // Append chunk to current AI message
+              newMessages[newMessages.length - 1] = {
+                ...lastMsg,
+                content: lastMsg.content + data.content
+              };
             }
             return newMessages;
           } else {
@@ -96,13 +107,13 @@ function App() {
 
     // 1. Add user message
     const newUserMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
-    
+
     // 2. Add placeholder AI thinking message
     const thinkingMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: '', isLoading: true };
-    
+
     setMessages(prev => [...prev, newUserMsg, thinkingMsg]);
     setIsProcessing(true);
-    
+
     // Send to Python backend
     wsRef.current.send(JSON.stringify({ text: input }));
     setInput('');
@@ -118,7 +129,7 @@ function App() {
             </div>
           </div>
         )}
-        
+
         {messages.map((msg) => (
           <div key={msg.id} className={`message-wrapper ${msg.role}`}>
             <div className={`message-bubble ${msg.isLoading ? 'loading-text' : ''}`}>
