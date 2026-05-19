@@ -1,3 +1,5 @@
+<img src="frontend/public/Helium-agent-logo.png" width="1080" height="480" alt="Helium Agent Logo"/>
+
 # Helium Agent
 
 Helium is a local-first AI assistant with a voice pipeline, tool-calling agent loop, structured memory, and an optional web chat UI. It is designed for macOS and Apple Silicon, with local STT through MLX Whisper, wake-word detection through OpenWakeWord, TTS through Kokoro, and an LLM brain served from your own llama.cpp or Ollama-compatible local stack.
