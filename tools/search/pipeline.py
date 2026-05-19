@@ -30,15 +30,28 @@ class SearchPipeline:
         self.ranker = EvidenceRanker()
         self.builder = AnswerContextBuilder()
 
-    def search(self, query: str, num_results: int = 5) -> str:
+    def collect(self, query: str, num_results: int = 5) -> EvidencePack:
         plan = self.planner.plan(query)
         results, provider_errors = self.provider_runner.search(plan.queries, limit=num_results)
         pages = self.fetcher.fetch(results)
-        fetch_errors = [f"{page.url}: {page.error}" for page in pages if not page.ok and page.error]
+
+        fetch_errors = [
+            f"{page.url}: {page.error}"
+            for page in pages
+            if not page.ok and page.error
+        ]
+
         matches, claims = self.extractor.extract(plan, pages)
         ranked_matches, ranked_claims = self.ranker.rank(plan, matches, claims)
-        answer, confidence, caveats = self._answer(plan, ranked_matches, ranked_claims, pages)
-        pack = EvidencePack(
+        confidence, caveats = self._confidence_and_caveats(
+            pages=pages,
+            matches=ranked_matches,
+            claims=ranked_claims,
+            provider_errors=provider_errors,
+            fetch_errors=fetch_errors,
+        )
+
+        return EvidencePack(
             plan=plan,
             results=results,
             pages=pages,
@@ -46,36 +59,48 @@ class SearchPipeline:
             claims=ranked_claims,
             provider_errors=provider_errors,
             fetch_errors=fetch_errors,
-            answer=answer,
+            answer=None,
             confidence=confidence,
             caveats=caveats,
         )
-        return self.builder.build(pack)
 
-    def _answer(self, plan, matches, claims, pages: list[FetchedPage]) -> tuple[str | None, str, list[str]]:
-        if plan.question_type == "sports_recent_results":
-            requested = plan.requested_count or 5
-            usable = matches[:requested]
-            caveats: list[str] = []
-            if len(usable) < requested:
-                caveats.append(f"Only found {len(usable)} of {requested} requested matches.")
-            if not usable or not plan.target_team:
-                return None, "low", caveats or ["No direct match-result evidence was found."]
-            total = sum(match.goals_for(plan.target_team) or 0 for match in usable)
-            confidence = "high" if len(usable) >= requested else "low"
-            return (
-                f"{plan.target_team} scored {total} goals across the {len(usable)} verified matches.",
-                confidence,
-                caveats,
-            )
+    def search(self, query: str, num_results: int = 5) -> str:
+        return self.builder.build(self.collect(query, num_results=num_results))
 
-        if claims:
-            return None, "medium", []
+    def _confidence_and_caveats(
+        self,
+        pages: list[FetchedPage],
+        matches,
+        claims,
+        provider_errors: list[str],
+        fetch_errors: list[str],
+    ) -> tuple[str, list[str]]:
+        evidence_count = len(matches) + len(claims)
+        readable_pages = [page for page in pages if page.ok and page.text.strip()]
+        caveats: list[str] = []
 
         if not pages:
-            return None, "low", ["No search results were available from the configured providers."]
+            caveats.append("No search results were available from the configured providers.")
+            return "low", caveats
 
-        return None, "low", ["Search results were found, but no concise evidence could be extracted."]
+        if provider_errors:
+            caveats.append("Some search providers failed.")
+
+        if fetch_errors:
+            caveats.append("Some pages could not be fetched.")
+
+        if not readable_pages:
+            caveats.append("Search results were found, but no readable page text was available.")
+            return "low", caveats
+
+        if evidence_count >= 3:
+            return "high", caveats
+
+        if evidence_count >= 1:
+            return "medium", caveats
+
+        caveats.append("Search results were found, but no concise evidence could be extracted.")
+        return "low", caveats
 
 
 def search_web(query: str, num_results: int = 5) -> str:

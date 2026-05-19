@@ -11,6 +11,7 @@ from tools.file_ops import create_file
 from tools.search.hybrid_fetch import fetch_url_content_mvp
 from tools.search.searxng import search_searxng
 from tools.web_search import search_web
+from tools.research.pipeline import research_query
 from utils.parser import extract_json
 
 
@@ -24,6 +25,7 @@ class ToolDefinition:
 AVAILABLE_TOOLS = {
     "create_file": ToolDefinition(create_file, "Creates or overwrites a file in the current project.", "risky"),
     "search_web": ToolDefinition(search_web, "Searches the web and returns structured evidence with sources.", "safe"),
+    "research_query": ToolDefinition(research_query, "Researches complex analytical questions using multiple searches and citations.", "safe"),
     "remember_fact": ToolDefinition(remember_fact, "Saves a user fact or preference into long-term memory.", "safe"),
     "retrieve_facts": ToolDefinition(retrieve_facts, "Retrieves saved facts and preferences.", "safe"),
     "open_app": ToolDefinition(open_app, "Opens a macOS application.", "risky"),
@@ -38,15 +40,25 @@ You have access to the following tools:
    - Use this IMMEDIATELY for news, facts, scores, or any knowledge beyond your cutoff data.
    - Do NOT ask the user to clarify broad requests (e.g., "latest news"). Invent a broad query (e.g., "latest world news today") and search immediately.
    - When interpreting the search results, EXTRACT HARD FACTS (e.g., "Team X won 3-0"). Do NOT summarize the search result descriptions (e.g., avoid "This article talks about...").
-3. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact or preference into long-term memory. Permission: safe.
-4. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts and preferences. Permission: safe.
-5. open_app(app_name: str) - Opens a macOS application (e.g., 'Safari', 'Calculator'). Permission: risky, user confirmation required.
-6. get_time() - Returns the current system time. Permission: safe.
+   - Use search_web for simple one-hop factual lookups.
+3. research_query(query: str, max_sources: int = 8) - Researches complex analytical questions using multiple searches and citations. Permission: safe.
+   Use research_query for:
+   - comparisons
+   - why/how questions about recent events
+   - economics, markets, policy, politics, regulations, or geopolitical analysis
+   - questions asking for detailed reports, trends, impacts, or explanations
+4. remember_fact(fact: str, category: str = "facts" | "preferences") - Saves a user fact or preference into long-term memory. Permission: safe.
+5. retrieve_facts(category: str = "facts" | "preferences") - Retrieves saved facts and preferences. Permission: safe.
+6. open_app(app_name: str) - Opens a macOS application (e.g., 'Safari', 'Calculator'). Permission: risky, user confirmation required.
+7. get_time() - Returns the current system time. Permission: safe.
 
 If you need to use a tool, you MUST respond in the exact JSON format. You MUST think about your plan first.
 
 Example (search_web):
 {"plan": "The user wants broad sports news. I will search for today's sports highlights.", "tool": "search_web", "args": {"query": "latest sports news highlights today"}}
+
+Example (research_query):
+{"plan": "The user asks for a recent macroeconomic explanation. I will run a research query with multiple sources.", "tool": "research_query", "args": {"query": "Why is Indian Rupee falling recently?"}}
 
 Example (create_file):
 {"plan": "Writing a simple C++ program based on user request.", "tool": "create_file", "args": {"filename": "hello.cpp", "content": "#include <iostream>\\nint main() {\\n    std::cout << \\"Hello\\" << std::endl;\\n    return 0;\\n}"}}
@@ -65,10 +77,18 @@ If you do not need a tool, just respond with conversational text.
 
 def execute_react_tool(action_dict: dict) -> str:
     """Execute a ReAct-style JSON action from the local orchestrator."""
+    if "research_query" in action_dict:
+        query = action_dict["research_query"].get("query", "")
+        max_sources = action_dict["research_query"].get("max_sources", 8)
+        # results = research_query(query, max_sources)
+        return research_query(query, max_sources)
+        # return json.dumps(results)
+    
     if "search_web" in action_dict:
         query = action_dict["search_web"].get("query", "")
-        results = search_searxng(query)
-        return json.dumps(results)
+        # results = search_searxng(query)
+        # return json.dumps(results)
+        return search_web(query)
 
     if "fetch_url" in action_dict:
         url = action_dict["fetch_url"].get("url", "")

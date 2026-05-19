@@ -1,7 +1,7 @@
 import datetime as dt
 import unittest
 
-from tools.search.models import FetchedPage, SearchResult
+from tools.search.models import EvidencePack, FetchedPage, SearchResult
 from tools.search.pipeline import SearchPipeline
 
 
@@ -26,39 +26,70 @@ class FakeFetcher:
         return [FetchedPage(results[0].url, results[0].title, text, results[0])]
 
 
+class EmptyProviderRunner:
+    def search(self, queries, limit):
+        return [], ["provider unavailable"]
+
+
+class EmptyFetcher:
+    def fetch(self, results):
+        return []
+
+
 class SearchPipelineTests(unittest.TestCase):
-    def test_pipeline_builds_computed_sports_evidence_pack(self):
+    def test_collect_returns_structured_evidence_pack(self):
         pipeline = SearchPipeline(
             provider_runner=FakeProviderRunner(),
             fetcher=FakeFetcher(),
             today=dt.date(2026, 5, 12),
         )
 
-        output = pipeline.search("how many goals have Barcelona scored in their last 5 matches in La Liga?", num_results=5)
+        pack = pipeline.collect(
+            "how many goals have Barcelona scored in their last 5 matches in La Liga?",
+            num_results=5,
+        )
+
+        self.assertIsInstance(pack, EvidencePack)
+        self.assertEqual(pack.plan.question_type, "sports_recent_results")
+        self.assertEqual(pack.confidence, "high")
+        self.assertIsNone(pack.answer)
+        self.assertEqual(len(pack.results), 1)
+        self.assertEqual(len(pack.pages), 1)
+        self.assertGreaterEqual(len(pack.matches), 5)
+        self.assertEqual(pack.provider_errors, [])
+        self.assertEqual(pack.fetch_errors, [])
+
+    def test_search_formats_evidence_without_domain_specific_answer(self):
+        pipeline = SearchPipeline(
+            provider_runner=FakeProviderRunner(),
+            fetcher=FakeFetcher(),
+            today=dt.date(2026, 5, 12),
+        )
+
+        output = pipeline.search(
+            "how many goals have Barcelona scored in their last 5 matches in La Liga?",
+            num_results=5,
+        )
 
         self.assertIn("Question type: sports_recent_results", output)
-        self.assertIn("Computed answer: Barcelona scored 12 goals", output)
         self.assertIn("Confidence: high", output)
+        self.assertNotIn("Computed answer:", output)
         self.assertIn("2026-05-10: Barcelona 2-0 Real Madrid", output)
         self.assertIn("Sources:", output)
         self.assertIn("https://example.com/barca", output)
 
-    def test_pipeline_reports_partial_sports_evidence(self):
-        class PartialFetcher:
-            def fetch(self, results):
-                text = "2026-05-10 | Barcelona | 2-0 | Real Madrid"
-                return [FetchedPage(results[0].url, results[0].title, text, results[0])]
-
+    def test_collect_reports_empty_provider_result(self):
         pipeline = SearchPipeline(
-            provider_runner=FakeProviderRunner(),
-            fetcher=PartialFetcher(),
+            provider_runner=EmptyProviderRunner(),
+            fetcher=EmptyFetcher(),
             today=dt.date(2026, 5, 12),
         )
 
-        output = pipeline.search("Barcelona last 5 La Liga goals", num_results=5)
+        pack = pipeline.collect("latest AI regulation", num_results=5)
 
-        self.assertIn("Confidence: low", output)
-        self.assertIn("Only found 1 of 5 requested matches.", output)
+        self.assertEqual(pack.confidence, "low")
+        self.assertIn("No search results were available", pack.caveats[0])
+        self.assertEqual(pack.provider_errors, ["provider unavailable"])
 
 
 if __name__ == "__main__":
